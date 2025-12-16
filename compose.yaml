@@ -13,6 +13,8 @@ services: # dockers compose expects
       - .env
     volumes:
       - ./backend/src:/app
+    depends_on:
+      - db_service
     develop:
       watch:
       - action: rebuild
@@ -22,13 +24,27 @@ services: # dockers compose expects
       - action: restart
         path: backend/src/
         #target: /app 
-  static_html:
-    build:
-      context: ./static_html
-      dockerfile: static.Dockerfile
+  #DATABASE_URL=postgresql+psyccopg://dbuser:db-password@db_service:5432/mydb
+  db_service:
+    image: postgres:17.5
     ports:
-      - 4000:8000
-      - 4001:8000
-    command: python -m http.server 8000
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=dbuser
+      - POSTGRES_PASSWORD=db-password
+      - POSTGRES_DB=mydb
     volumes:
-      - ./static_html/src:/app
+      - dc_managed_db_data:/var/lib/postgresql/data
+  # static_html:
+  #   build:
+  #     context: ./static_html
+  #     dockerfile: static.Dockerfile
+  #   ports:
+  #     - 4000:8000
+  #     - 4001:8000
+  #   command: python -m http.server 8000
+  #   volumes:
+  #     - ./static_html/src:/app
+
+volumes:
+  dc_managed_db_data:
