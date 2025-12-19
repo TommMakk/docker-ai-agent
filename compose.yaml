@@ -1,4 +1,4 @@
-services: # dockers compose expects
+services:
   backend:
     build:
       context: ./backend
@@ -15,6 +15,7 @@ services: # dockers compose expects
       - ./backend/src:/app
     depends_on:
       - db_service
+      - ollama
     develop:
       watch:
       - action: rebuild
@@ -23,8 +24,15 @@ services: # dockers compose expects
         path: backend/Dockerfile
       - action: restart
         path: backend/src/
-        #target: /app 
-  #DATABASE_URL=postgresql+psyccopg://dbuser:db-password@db_service:5432/mydb
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11435:11434"  # Changed: Host 11435 -> Container 11434 (avoids port conflict)
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
   db_service:
     image: postgres:17.5
     ports:
@@ -35,16 +43,7 @@ services: # dockers compose expects
       - POSTGRES_DB=mydb
     volumes:
       - dc_managed_db_data:/var/lib/postgresql/data
-  # static_html:
-  #   build:
-  #     context: ./static_html
-  #     dockerfile: static.Dockerfile
-  #   ports:
-  #     - 4000:8000
-  #     - 4001:8000
-  #   command: python -m http.server 8000
-  #   volumes:
-  #     - ./static_html/src:/app
 
 volumes:
   dc_managed_db_data:
+  ollama_data:

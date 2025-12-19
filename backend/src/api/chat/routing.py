@@ -1,36 +1,145 @@
+"""
+Chat API Routing Module
+
+Provides REST API endpoints for chat interactions powered by a multi-agent system.
+This module handles message processing through intelligent AI agents that manage
+emails, conduct research, and orchestrate complex workflows.
+
+Endpoints:
+    GET  /api/chats/          - Health check
+    GET  /api/chats/recent/   - Retrieve recent messages
+    POST /api/chats/          - Process new user message through multi-agent system
+"""
+
+import uuid
 from typing import List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
+from langgraph.checkpoint.memory import InMemorySaver
 
 from api.db import get_session
-from .models import ChatMessage, ChatMessagePayload, ChatMessageListItem
+from api.ai.agents import get_supervisor
+from api.ai.schemas import EmailMessageSchema, SupervisorMessageSchema
+from api.ai.services import generate_email_message
+from .models import ChatMessagePayload, ChatMessage, ChatMessageListItem
+
+# Router for chat endpoints
 router = APIRouter()
 
-# /api/chat/
+# In-memory checkpoint for conversation state management
+checkpointer = InMemorySaver()
+
+
+# ============================================================================
+# Health and Status Endpoints
+# ============================================================================
+
 @router.get("/")
 def chat_health():
+    """
+    Health check endpoint for the chat API.
+    
+    Returns:
+        dict: Status indicator showing API is operational
+    """
     return {"status": "ok"}
 
-# /api/chats/recent/
-# curl http://localhost:8070/api/chats/recent/
+
 @router.get("/recent/", response_model=List[ChatMessageListItem])
 def chat_list_messages(session: Session = Depends(get_session)):
+    """
+    Retrieve recent messages from the chat history database.
+    
+    Returns the 10 most recent messages for reference and context.
+    
+    Args:
+        session (Session): Database session dependency
+        
+    Returns:
+        List[ChatMessageListItem]: List of recent chat messages
+    """
+    # Query database for recent messages
     query = select(ChatMessage)
     results = session.exec(query).fetchall()[:10]
     return results
 
 
-# curl -X POST -d '{"message": "Hello world"}' -H "Content-Type: application/json" http://localhost:8070/api/chats/
-#HTTP POST -> payload = {...}
-@router.post("/", response_model=ChatMessage)
+# ============================================================================
+# Message Processing Endpoints
+# ============================================================================
+
+@router.post("/", response_model=SupervisorMessageSchema)
 def chat_create_message(
-    payload:ChatMessagePayload,
+    payload: ChatMessagePayload,
     session: Session = Depends(get_session)
 ):
-    data = payload.model_dump()
-    # create ChatMessage instance, persist it and return the saved object
-    obj = ChatMessage.model_validate(data)
-    session.add(obj)
+    """
+    Process a new user message through the multi-agent system.
+    
+    This endpoint accepts user messages, persists them to the database,
+    and routes them through a supervisor that coordinates between
+    specialized agents (email agent, research agent).
+    
+    Args:
+        payload (ChatMessagePayload): Request body containing user message
+        session (Session): Database session for message persistence
+        
+    Returns:
+        SupervisorMessageSchema: Final response from the agent system
+        
+    Raises:
+        HTTPException: 400 if the agent system fails to process the message
+        
+    Example:
+        POST /api/chats/
+        {
+            "message": "Research why it is good to go outside and email me the results"
+        }
+    """
+    # Convert payload to dictionary and validate
+    message_data = payload.model_dump()
+    message_obj = ChatMessage.model_validate(message_data)
+    
+    # Persist message to database
+    session.add(message_obj)
     session.commit()
-    session.refresh(obj)
-    return obj
+    
+    # Create unique thread ID for conversation tracking
+    thread_id = uuid.uuid4()
+    
+    # Initialize the multi-agent supervisor
+    supervisor = get_supervisor(checkpointer=checkpointer)
+    
+    # Format message for agent system (expects LangChain message format)
+    agent_message_payload = {
+        "messages": [
+            {
+                "role": "user",
+                "content": payload.message
+            }
+        ]
+    }
+    
+    # Route message through agent system with conversation thread
+    result = supervisor.invoke(
+        agent_message_payload,
+        {"configurable": {"thread_id": str(thread_id)}}
+    )
+    
+    # Validate supervisor returned results
+    if not result:
+        raise HTTPException(
+            status_code=400,
+            detail="Multi-agent system failed to process message"
+        )
+    
+    # Extract message chain from result
+    messages = result.get("messages")
+    if not messages:
+        raise HTTPException(
+            status_code=400,
+            detail="No response generated by agent system"
+        )
+    
+    # Return the final agent response
+    return messages[-1]
