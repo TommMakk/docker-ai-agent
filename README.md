@@ -61,16 +61,26 @@ List recent messages.
 backend/src/
 ├── main.py              # FastAPI app
 └── api/
+    ├── __init__.py      # API package initializer
     ├── db.py            # Database config
     ├── ai/              # Agent system
+    │   ├── __init__.py  # AI package initializer
     │   ├── agents.py    # Multi-agent factory
-    │   ├── llms.py      # LLM setup
-    │   ├── tools.py     # Email tools
-    │   └── services.py  # AI services
+    │   ├── llms.py      # LLM setup and adapters
+    │   ├── tools.py     # Email tools (LangChain/LangGraph wrappers)
+    │   ├── services.py  # AI services (structured-output helpers)
+    │   ├── assistants.py# Experimental assistants and utilities
+    │   └── schemas.py   # Pydantic/SQLModel schemas for AI outputs
     ├── chat/
-    │   ├── routing.py   # API endpoints
-    │   └── models.py    # Data models
+    │   ├── __init__.py  # Chat package initializer
+    │   ├── routing.py   # API endpoints for chat interactions
+    │   ├── ai_services.py# Chat-specific AI helpers and runners
+    │   └── models.py    # Request/DB models for chat messages
     └── myemailer/       # Email operations
+        ├── __init__.py  # Myemailer package initializer
+        ├── inbox_reader.py # IMAP inbox read wrapper
+        ├── sender.py       # SMTP email sending
+        └── gmail_imap_parser.py # Robust IMAP parsing utilities
 ```
 
 ## Environment Variables
